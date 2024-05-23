@@ -40,7 +40,8 @@
 		"coverage": "rimraf coverage && rimraf ./nyc_output && nyc -e .ts -x \"**/*.spec.ts\" -x \"tst/*\" --reporter=text-summary --reporter=lcov npm run test",
 		"build": "npm run clean && tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json && npm run _postbuild",
 		"_postbuild": "echo '{\"type\": \"module\"}' >lib/esm/package.json && echo '{\"type\": \"commonjs\"}' >lib/cjs/package.json",
-		"lint": "eslint 'src/**/*.ts'"
+		"lint": "eslint 'src/**/*.ts'",
+		"postinstall": "npm run build"
 	},
 	"repository": {
 		"type": "git",
