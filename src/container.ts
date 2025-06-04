@@ -33,6 +33,9 @@ export class Container implements Binder {
 
 	protected providers = new Map<InjectableId<any>, Provider>();
 
+	// Set to track dependencies currently being resolved (for cycle detection)
+	protected resolutionStack = new Set<InjectableId<any>>();
+
 	/**
 	 * @inheritDoc
 	 */
@@ -48,34 +51,65 @@ export class Container implements Binder {
 	 * @inheritDoc
 	 */
 	public get<T>(id: InjectableId<T>): T {
+		// Check for cycles
+		if (this.resolutionStack.has(id)) {
+			throw new Error(`Dependency cycle detected: ${Array.from(this.resolutionStack).map(i => i.toString()).join(' -> ')} -> ${id.toString()}`);
+		}
+
 		const provider = this.providers.get(id);
 		if (!provider) {
 			if (this.parent)
 				return this.parent.get<T>(id);
 			throw new Error('Symbol not bound: ' + id.toString());
 		}
-		const state = provider.provideAsState();
-		if (state.pending)
-			throw new Error('Synchronous request on unresolved asynchronous dependency tree: ' + id.toString());
-		if (state.rejected)
-			throw state.rejected;
-		return state.fulfilled as T;
+
+		// Add id to resolution stack before resolving
+		this.resolutionStack.add(id);
+
+		try {
+			const state = provider.provideAsState();
+			if (state.pending)
+				throw new Error('Synchronous request on unresolved asynchronous dependency tree: ' + id.toString());
+			if (state.rejected)
+				throw state.rejected;
+			return state.fulfilled as T;
+		} finally {
+			// Remove id from resolution stack after resolving
+			this.resolutionStack.delete(id);
+		}
 	}
 
 	/**
 	 * @inheritDoc
 	 */
 	public resolve<T>(id: InjectableId<T>): Promise<T> {
+		// Check for cycles
+		if (this.resolutionStack.has(id)) {
+			return Promise.reject(new Error(`Dependency cycle detected: ${Array.from(this.resolutionStack).map(i => i.toString()).join(' -> ')} -> ${id.toString()}`));
+		}
+
+		// Add id to resolution stack before resolving
+		this.resolutionStack.add(id);
+
 		const state = this.resolveState(id);
+
+		// Create a promise that will clean up the resolution stack
+		let resultPromise: Promise<T>;
+
 		if (isPromise(state.promise)) {
-			return state.promise;
+			resultPromise = state.promise.finally(() => {
+				// Remove id from resolution stack after resolving
+				this.resolutionStack.delete(id);
+			});
+		} else if (state.rejected) {
+			this.resolutionStack.delete(id);
+			resultPromise = Promise.reject(state.rejected);
+		} else {
+			this.resolutionStack.delete(id);
+			resultPromise = Promise.resolve(state.fulfilled);
 		}
 
-		if (state.rejected) {
-			return Promise.reject(state.rejected);
-		}
-
-		return Promise.resolve(state.fulfilled);
+		return resultPromise;
 	}
 
 	// noinspection JSUnusedGlobalSymbols
@@ -200,6 +234,8 @@ export class Container implements Binder {
 		if (!provider) {
 			if (this.parent) {
 				if (this.parent instanceof Container) {
+					// If parent is a Container, we need to make sure we check for cycles there too
+					// If a cycle is detected in the parent, it will throw an error
 					return this.parent.resolveState<T>(id);
 				}
 				// This code (below) will only ever execute if the creator of this container passes in their own implementation of an Injector.

@@ -72,13 +72,13 @@ describe('Dependency cycle detection', () => {
     }
 
     const container = new Container();
-    
+
     container.bindFactory(FactoryA, (injector) => {
       // Create a cycle by having FactoryA depend on FactoryB
       const b = injector.get(FactoryB);
       return new FactoryA();
     });
-    
+
     container.bindClass(FactoryB);
 
     function resolveWithCycle() {
@@ -100,13 +100,13 @@ describe('Dependency cycle detection', () => {
     }
 
     const container = new Container();
-    
+
     container.bindAsyncFactory(AsyncFactoryA, async (injector) => {
       // Create a cycle by having AsyncFactoryA depend on AsyncFactoryB
       const b = await injector.resolve(AsyncFactoryB);
       return new AsyncFactoryA();
     });
-    
+
     container.bindClass(AsyncFactoryB);
 
     try {
